@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "samdengler-skills",
+  "description": "Agent Skills by Sam Dengler",
+  "owner": {
+    "name": "Sam Dengler"
+  },
+  "plugins": [
+    {
+      "name": "artifact-exchange",
+      "description": "Export Claude artifacts (pages, Docs, Slides, typed artifacts) into a portable zip bundle and import them into another Claude account.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/artifact-exchange"
+      ]
+    }
+  ]
+}
