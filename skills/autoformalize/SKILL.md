@@ -1,9 +1,9 @@
 ---
-name: autoformalize-business-rules
+name: autoformalize
 description: Turn business rules from any source (web pages, PDFs, contracts, code, spreadsheets, SME notes) into cited Lean rules with proofs, open questions and an SME report.
 ---
 
-# Autoformalize business rules
+# Autoformalize
 
 Use this skill to start or extend a project that writes an organization's
 business rules as Lean 4 definitions, proves what they guarantee, and reports
