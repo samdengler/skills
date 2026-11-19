@@ -75,6 +75,7 @@ docs/survey.md            candidate rules and their classification
 docs/status.md            generated
 reports/sme-review/       generated report for subject matter experts
 research/answers.yaml     likely answers to open questions, with sources and confidence
+reviews/findings.md       every review finding, one row each, with its status
 .github/workflows/ci.yml  builds proofs, checks citations, regenerates reports
 ```
 
@@ -423,6 +424,26 @@ what the model tells a reader, and writes them to `reviews/`. Each new kind of
 mistake becomes a pitfall in the checklist below and, where possible, a check
 in the status tool.
 
+### Review findings in the repository
+
+Findings kept only outside the repository get lost: in a chat, a shared doc or
+a reviewer's notes, nobody sees which were fixed. Track every finding in
+`reviews/findings.md`, one row per finding:
+
+```markdown
+| ID | Severity | Finding | Rules | Status | Change |
+|---|---|---|---|---|---|
+| H1 | high | CB-003 adds the 2026 adjustments to values that already include them | CB-003 | fixed | #2 |
+| H2 | high | Open questions are false theorems closed with `sorry` | all | open | |
+| L1 | low | Proven criteria that are true by construction | MQ-001, ST-002 | in progress | #6 |
+```
+
+Status is one of `open`, `in progress`, `fixed`, `declined: <reason>`.
+`Change` names the pull request or commit. Every change that addresses a
+finding updates its row in the same pull request. A new review adds its rows
+before any fix starts. The full review text stays in `reviews/<date>-<name>.md`
+and the table links to it.
+
 ### Implementation checks (optional)
 
 To check a service against the model, from quick to complete: fixed request
@@ -448,6 +469,20 @@ Wording in reports: proven means checked for every input; an open point is a
 question for the business; nothing is confirmed until an `@[confirmed]` tag
 says so.
 
+A generated report must never merge stale. Two pull requests can each pass CI
+and still leave `main` red: the second was built before the first merged, so
+its committed report describes a model that no longer exists. Guard against
+this in two ways, and use both:
+
+- Branch protection on `main` requires branches to be up to date before
+  merging, with the CI checks required.
+- CI regenerates every committed report (`docs/status.md`, the SME report, the
+  oracle cases, generated Lean) and fails on a diff, on pull requests and on
+  pushes to `main`.
+
+After a merge, rebase or merge `main` into every open pull request that
+touches the model and let CI regenerate its reports before it merges.
+
 ## Stage 7. Close the loop
 
 - An SME answer becomes an `sme` segment. The reading it settles is removed or
@@ -466,8 +501,12 @@ One workflow, on push and pull request:
 1. Capture job: `citations`, regenerate generated Lean and fail on a diff.
 2. Lean job: `lake build`, `lake exe status`, fail if `docs/status.md`
    differs from the committed copy, check golden cases.
-3. Report job: regenerate the oracle and SME report. On a same-repository
-   pull request branch it may push a "Regenerate reports" commit.
+3. Report job: regenerate the oracle and SME report and fail on a diff. On a
+   same-repository pull request branch it may push a "Regenerate reports"
+   commit instead. On a push to `main` it only checks.
+
+Turn on branch protection for `main`: the jobs above are required checks, and
+branches must be up to date before merging.
 
 Cloud agent sessions often cannot download the Lean toolchain. Let CI build
 Lean and regenerate reports, and push a branch to see results.
@@ -496,6 +535,10 @@ Copy into each pull request that adds or changes a rule.
 - [ ] P11. New behaviour has a golden case written without reading the Lean.
       The generated oracle is never used to check the model.
 - [ ] P12. Every row and value the rule reads is cited.
+- [ ] P13. Every review finding this change addresses has its row in
+      `reviews/findings.md` updated, with this pull request in `Change`.
+- [ ] P14. The branch is up to date with `main`, and the committed reports
+      were regenerated after the last merge from `main`.
 
 ## Templates
 
@@ -537,6 +580,10 @@ explains the design; read it before changing structure.
   If questions changed, regenerate the oracle and SME report and classify new
   questions as conflict or unstated.
 - Run the pitfalls checklist on every pull request.
+- Track every review finding in `reviews/findings.md` with its status. A change
+  that addresses a finding updates its row.
+- Generated reports never merge stale: bring the branch up to date with `main`
+  and regenerate before merging. CI fails on a diff.
 
 ## Writing
 Summaries of source text are in our words. Statuses are computed, never typed.
@@ -548,6 +595,6 @@ Summaries of source text are in our words. Statuses are computed, never typed.
    candidates, write one rule with a cited example, status tool, CI.
 2. Add sources and adapters until coverage is clean for the first area.
 3. Write the area's rules, readings and golden cases. Run an independent
-   critique and fix what it finds.
+   critique, record its findings in `reviews/findings.md`, and fix them.
 4. Generate the SME report and send the questions.
 5. Repeat per area. Fold each new kind of mistake back into this checklist.
