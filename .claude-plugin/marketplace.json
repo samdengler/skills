@@ -14,6 +14,15 @@
       "skills": [
         "./skills/artifact-exchange"
       ]
+    },
+    {
+      "name": "autoformalize-business-rules",
+      "description": "Turn business rules from any source (web pages, PDFs, contracts, code, spreadsheets, SME notes) into cited Lean rules with proofs, open questions and an SME report.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/autoformalize-business-rules"
+      ]
     }
   ]
 }
