@@ -5,12 +5,14 @@ Agent Skills for Claude. This repo is a Claude Code plugin marketplace; each ski
 | Skill | Description |
 | --- | --- |
 | [artifact-exchange](skills/artifact-exchange) | Export Claude artifacts into a portable zip bundle and import them into another Claude account. |
+| [autoformalize-business-rules](skills/autoformalize-business-rules) | Turn business rules from varied sources into cited Lean rules with proofs, open questions and an SME report. |
 
 ## Install in Claude Code
 
 ```
 /plugin marketplace add samdengler/skills
 /plugin install artifact-exchange@samdengler-skills
+/plugin install autoformalize-business-rules@samdengler-skills
 ```
 
 ## Install in claude.ai or Claude Desktop
