@@ -7,9 +7,10 @@ description: Turn business rules from any source (web pages, PDFs, contracts, co
 
 Use this skill to start or extend a project that writes an organization's
 business rules as Lean 4 definitions, proves what they guarantee, and reports
-where the sources disagree or are silent. It generalizes two working projects:
-`verified-air` (IATA ONE Order) and `delta-skymiles-policies` (Delta SkyMiles),
-plus the pitfalls an independent review found in the second.
+where the sources disagree or are silent. It generalizes three working
+projects: `verified-air` (IATA ONE Order), `delta-skymiles-policies` (Delta
+SkyMiles) and `claude-ops-spec` (Claude Code settings and a policy over them),
+plus the pitfalls independent reviews found in the last two.
 
 ## Project shape
 
@@ -33,6 +34,33 @@ SME answers --> new sme segments --> readings removed --> guarantees proven
 
 A new kind of source needs a new adapter and nothing else. If the analysis
 layer needs to know where a segment came from, the adapter is leaking.
+
+## Product semantics and policy as code
+
+When the goal is a policy over a product (its settings, permissions or access
+rules), the repository holds two models in one Lean code base.
+
+- **Model A, product semantics.** How the product computes an outcome from
+  its inputs: which settings level wins, how a permission rule matches, which
+  rule decides a call. Written from the vendor's documentation and checked by
+  experiments against the product.
+- **Model B, policy as code.** The organization's policy as one Lean value.
+  Its theorems say that for every input the organization does not control
+  (a developer's own files, a user's request), the outcome has a property.
+  The deployable configuration file is generated from the same value, and CI
+  fails when the committed file differs from what the value generates.
+
+Model B theorems are usually Model A lemmas with the policy substituted, so
+they are only as strong as the parts of Model A they quantify over. A
+guarantee that holds for any policy contents, or for any rule matcher, says
+nothing about this policy. P14 to P16 in the checklist cover this, and the
+mutation step in CI checks it. A generated report of what sample users get
+under the policy, diffed on each pull request, shows reviewers the effect of
+a change in plain terms.
+
+Build Model A first, far enough to cover what the policy relies on. Model B
+then needs no new product semantics, only the policy value, its guarantees and
+the generator.
 
 ## Non-negotiable rules
 
@@ -71,6 +99,10 @@ Rules/<Area>/             rules by business area, one range of rule IDs per area
 Status/Main.lean          lake exe status
 Oracle/golden.jsonl       hand-written cases, written from segments without reading the Lean
 Oracle/cases.jsonl        cases generated from the model, for checking outside tools only
+Policy/                   Model B: the policy value, its guarantees, mutations.yaml
+policy/                   generated deployable configuration and persona report
+experiments/<date>-<case>/  one folder per experiment: inputs, command, result.txt
+scripts/mutate.py         CI mutation step for policy data
 docs/survey.md            candidate rules and their classification
 docs/status.md            generated
 reports/sme-review/       generated report for subject matter experts
@@ -86,7 +118,10 @@ Settle these before capturing anything, and record them in the README:
 - The sources, their kinds, and who owns them. List every kind you expect.
 - Who answers questions (the SME), even if only a role.
 - The outcomes wanted: a review document for SMEs, a test oracle for an
-  implementation, implementation proofs, or a policy for a support agent.
+  implementation, implementation proofs, a policy for a support agent, or a
+  policy as code over a product (see the two models above).
+- For a product, the versions and the configuration (mode, client, account)
+  the guarantees are claimed for. Experiments run there (P17).
 - Licensing: which sources may be stored and quoted, which only cited.
 
 Then write `CLAUDE.md` from the template at the end and create the layout.
@@ -136,6 +171,7 @@ Raw files are never edited.
   columns: ['', SILVER, GOLD]        # table-row
   cells: [...]
   effective: 2026-02-01              # when the source states one
+  requires: ["2.1.257"]              # product versions the text says it needs
 ```
 
 Segment id rules:
@@ -182,12 +218,14 @@ how much weight a source carries.
 | `code` | Application source code |
 | `test` | An existing test suite |
 | `data` | Production data or logs, as a dated query and result |
+| `experiment` | A reproducible probe of a product version: inputs, command, observed output, date, version |
+| `config` | A dated snapshot of deployed configuration, such as a managed settings file |
 | `sme` | An answer from a subject matter expert, dated, with a role |
 | `modeller` | A choice no source makes |
 
-`code`, `engine`, `test` and `data` say what a system does. `policy`,
-`standard` and `regulation` say what should happen. A disagreement between the
-two groups is a finding to report.
+`code`, `engine`, `test`, `data` and `experiment` say what a system does.
+`policy`, `standard` and `regulation` say what should happen. `config` says
+what is deployed. A disagreement between the groups is a finding to report.
 
 ### Adapters by source
 
@@ -239,6 +277,31 @@ These are ready-made golden cases after an SME confirms them.
 result and the date. Use data to show what happens in practice and to confirm
 or refute a reading.
 
+**Experiments.** Use them to settle what a product does where its
+documentation is vague, silent or contradicts itself. One folder per case
+under `experiments/`, holding every input file, the command, the product
+version, the date, the machine and account, and the observed output in
+`result.txt`. The segment cites `result.txt` by path and hash, and
+`citations` checks it. Each case has a control: the same run without the rule
+or policy under test, so the outcome can be traced to it. Check side effects
+(a probe file, a pushed ref, a secret in the output), not only what the agent
+says. Run in the configuration the guarantee is claimed for, which is usually
+the user's default mode and client (P17). Record each day's runs in
+`experiments/<date>-summary.md`, with what the runs did not cover.
+
+When an experiment settles a question, write the observed reading as a
+definition next to the reading type, cited to the experiment
+(`def observedLockReading := LockReading.dropsDeveloperRules`). Keep both
+readings in the model, so a product version that behaves differently fails a
+cited example instead of passing silently.
+
+**Deployed configuration.** A dated snapshot of the file as installed, with
+its hash and the path it was installed to. A configuration the project
+generates is compared with the snapshot. Record the other sources that can
+change the effective configuration on that machine (drop-in folders, device
+profiles, other installed binaries), because a guarantee assumes none of them
+changes the result.
+
 **SME answers, interviews and email.** One answer is one segment, with date,
 role and the question it answers. Store the question id so the report can
 close it.
@@ -278,6 +341,11 @@ its qualifiers ("qualifying", "operated by", "if permitted", "typically",
 "up to", "at least", dates). Point each qualifier to a branch, a reading or a
 `modeller` source.
 
+Summaries in documentation often have their exceptions elsewhere. Before
+writing a rule, search the snapshot near the concept for "except", "unless",
+"only when", "requires" and "does not", and read every table of what a
+construct does not cover or does not block (P13).
+
 - A reading is an inductive type passed as a parameter:
   `inductive Rounding | down | nearest`. Each constructor cites the segment
   that supports it.
@@ -314,7 +382,7 @@ def tierFor (t : Thresholds) (balance : Nat) : Tier := ...
 
 /-- htq-thresholds: "Gold 10,000". Given 10,000 MQDs, the tier is Gold. -/
 @[cited_example "htq-thresholds", checks "MQ-001.1"]
-example : tierFor howToQualify 10000 = .gold := by decide
+theorem tierFor_gold_example : tierFor howToQualify 10000 = .gold := by decide
 
 @[checks "MQ-001.1"]
 theorem tierFor_monotone (t : Thresholds) (a b : Nat) (h : a ≤ b) :
@@ -322,7 +390,8 @@ theorem tierFor_monotone (t : Thresholds) (a b : Nat) (h : a ≤ b) :
 ```
 
 Examples state Given, When and Then in the docstring and return records whose
-fields label each part.
+fields label each part. Cited examples are named theorems: Lean does not keep
+an `example` in the environment, so the status tool cannot see one.
 
 ### Attributes
 
@@ -330,8 +399,9 @@ fields label each part.
 |---|---|---|
 | `@[ears "ID"]` | rule | Stable requirement ID. Never renumber. |
 | `@[source "k1 k2"]` | rule, reading | Keys in `Rules/Core/Sources.lean`. An unknown key is an error. |
-| `@[checks "ID.n"]` | theorem, example | Proves that criterion for every input. |
-| `@[cited_example "key"]` | example | Expected value copied from that segment, quote in the docstring. |
+| `@[checks "ID.n"]` | theorem | Proves that criterion for every input. |
+| `@[cited_example "key"]` | theorem | Expected value copied from that segment, quote in the docstring. |
+| `@[assumes "text"]` | theorem | What a guarantee rests on outside the model, such as what a rule pattern matches. Reports show it next to the guarantee. |
 | `@[case]` | def | A computed scenario, used to witness a disagreement. |
 | `@[question "text"]` | theorem | A proven disagreement between readings, and the question for the business. |
 | `@[transcription]` | theorem | Checks that two hand-typed copies match. Counted apart from guarantees. |
@@ -374,6 +444,36 @@ change, because the status and report counts change.
 - Cross-page agreement checks mean something only when both sides are
   generated from the snapshot. Otherwise tag them `@[transcription]`.
 
+### Product versions
+
+A rule that depends on the product version takes the version as a parameter,
+and every version literal is cited. The capture step records "requires
+version X" statements in a segment's `requires` field, so they are easy to
+find. Cited examples name the version they run on. A policy records the
+minimum version it needs, and its experiments are rerun on each upgrade and
+on every other binary that can start a session on the machine.
+
+### Configuration strings
+
+A string in configuration data (a permission rule, a path pattern, a role
+name) has a meaning the product decides. Cite that meaning, and give each
+string a cited example over a real input: an absolute path, a full command, a
+named user. Comparing a string with itself shows nothing (P15).
+
+### Abstract parameters and `@[assumes]`
+
+A guarantee may quantify over a parameter the model does not define, such as
+the function that decides whether a rule matches a call. The real product
+must be an instance of that parameter. Cite the structure the parameter
+assumes: applied one entry at a time, the same in every layer, monotone. What
+the parameter cannot express (negation inside a list, a pattern anchored by
+the file it came from) becomes a reading or a question (P16).
+
+`@[assumes "..."]` records what remains: what the rule strings must match for
+the guarantee to mean what the owner wants, and the known routes around it.
+It is prose that nothing checks. Pair each one with an experiment that probes
+it and a theorem over a concrete input that must match (P14).
+
 ## Stage 5. Verify
 
 ### The status tool (`lake exe status`)
@@ -388,8 +488,133 @@ It reads attributes and the axioms each declaration uses, writes
   `of_decide_eq_true` with no hypotheses, unless it has `@[trivial_ok]`;
 - a `@[question]` theorem that is not an existence statement over readings.
 
+The P1 check above is a weak proxy. It looks only at the head of the proof
+term, so a one-line proof that calls another lemma passes however little it
+says, and a theorem whose hypothesis can never hold passes too. The mutation
+step below is the real test of P1 for policy data. For rules, a reviewer
+still has to name the wrong version of the rule that the theorem would catch.
+
 Status per criterion: `proven` (a guarantee), `question` (a proven
 disagreement), `transcription`, `unchecked`.
+
+### Mechanical checks
+
+A pitfall that can be checked mechanically goes into the status tool or CI. A
+checklist item depends on each reviewer reading it the same way; a check does
+not. When an independent critique finds a new kind of mistake, ask first
+whether a check can find it.
+
+| Pitfall | Check |
+|---|---|
+| P1 | Status tool (proxy, see above); mutation step for policy data |
+| P2 | Status tool: `@[question]` is an existence statement, no `sorry` |
+| P5 | Status tool: every rule has a cited example from one of its sources |
+| P11 | `lake exe oracle` runs the golden cases |
+| P12 | `citations` reports literals not found in cited segments |
+| P14 | Mutation step |
+
+### Mutation step for policy data
+
+A guarantee over configuration data must fail when the data is wrong. The
+mutation step changes the policy one entry at a time, rebuilds, and expects a
+named theorem to fail. A mutation that still builds means no guarantee
+depends on that entry: add a theorem over a concrete input, or remove the
+entry with a reason in the README.
+
+`Policy/mutations.yaml` lists one mutation per policy entry and per flag:
+
+```yaml
+- id: drop-env-deny
+  covers: Read(//**/.env)            # entry or key in the generated configuration
+  file: Policy/Policy.lean
+  find: '"Read(//**/.env)", '
+  replace: ''
+  expect: env_read_denied_absolute   # theorem that must fail
+- id: drop-push-ask
+  covers: Bash(git push)
+  file: Policy/Policy.lean
+  find: '"Bash(git push)", '
+  replace: ''
+  expect: push_asks_concrete
+- id: flip-bypass
+  covers: disableBypassPermissionsMode
+  file: Policy/Policy.lean
+  find: 'disableBypass := true'
+  replace: 'disableBypass := false'
+  expect: bypass_refused
+```
+
+`scripts/mutate.py` applies each mutation, builds, and checks that the build
+fails inside the expected theorem. It also fails when an entry of the
+generated configuration has no mutation, so a new rule cannot skip the step.
+
+```python
+# /// script
+# dependencies = ["pyyaml"]
+# ///
+"""Mutation step: each policy mutation must make a named theorem fail."""
+import json, re, subprocess, sys, yaml
+from pathlib import Path
+
+MODULE = "Policy"
+CONFIG = Path("policy/managed-settings.json")   # generated from the policy
+DECL = re.compile(r"^(theorem|def|lemma|example|instance|structure|inductive|@\[|/--|end |namespace )")
+
+def theorem_span(lines, name):
+    start = next((i for i, l in enumerate(lines) if re.match(rf"theorem {re.escape(name)}\b", l)), None)
+    if start is None:
+        sys.exit(f"theorem {name} not found")
+    end = next((j for j in range(start + 1, len(lines)) if DECL.match(lines[j])), len(lines))
+    return start + 1, end           # 1-based, inclusive start, exclusive end
+
+def entries(node):
+    """Every list item and every scalar key in the generated configuration."""
+    for key, value in node.items():
+        if isinstance(value, dict):
+            yield from entries(value)
+        elif isinstance(value, list):
+            yield from (v for v in value if isinstance(v, str))
+        else:
+            yield key
+
+mutations = yaml.safe_load(Path("Policy/mutations.yaml").read_text())
+failures = []
+
+covered = {m["covers"] for m in mutations}
+for e in entries(json.loads(CONFIG.read_text())):
+    if e not in covered:
+        failures.append(f"no mutation covers {e!r}")
+
+for m in mutations:
+    path = Path(m["file"])
+    original = path.read_text()
+    if original.count(m["find"]) != 1:
+        failures.append(f"{m['id']}: find text must occur once")
+        continue
+    path.write_text(original.replace(m["find"], m["replace"]))
+    try:
+        run = subprocess.run(["lake", "build", MODULE], capture_output=True, text=True)
+    finally:
+        path.write_text(original)
+    out = run.stdout + run.stderr
+    lo, hi = theorem_span(original.splitlines(), m["expect"])
+    loc = re.compile(rf"{re.escape(str(path))}:(\d+):\d+")
+    hits = [int(h.group(1)) for line in out.splitlines()
+            if "error" in line and (h := loc.search(line))]
+    if run.returncode == 0:
+        failures.append(f"{m['id']}: build passed, no theorem depends on this entry")
+    elif not any(lo <= n < hi for n in hits):
+        failures.append(f"{m['id']}: build failed, but not in {m['expect']}")
+    else:
+        print(f"ok {m['id']}: {m['expect']} fails")
+
+print("\n".join(failures))
+sys.exit(1 if failures else 0)
+```
+
+Each mutation names the configuration entry or key it `covers`, so the script
+can tell when a new entry has none. The mutation step runs after the main Lean
+job, since each mutation rebuilds the policy module.
 
 ### Citations
 
@@ -468,6 +693,22 @@ One workflow, on push and pull request:
    differs from the committed copy, check golden cases.
 3. Report job: regenerate the oracle and SME report. On a same-repository
    pull request branch it may push a "Regenerate reports" commit.
+4. Policy jobs, where the project has Model B: build the policy, run the
+   status tool on it, fail if the committed configuration file or persona
+   report differs from what the policy generates, then run the mutation step:
+
+```yaml
+  mutation:
+    runs-on: ubuntu-latest
+    needs: lean
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+      - uses: astral-sh/setup-uv@v6
+      # Each policy entry and flag, removed or flipped, must make a named
+      # theorem fail. See Policy/mutations.yaml.
+      - run: uv run scripts/mutate.py
+```
 
 Cloud agent sessions often cannot download the Lean toolchain. Let CI build
 Lean and regenerate reports, and push a branch to see results.
@@ -496,6 +737,26 @@ Copy into each pull request that adds or changes a rule.
 - [ ] P11. New behaviour has a golden case written without reading the Lean.
       The generated oracle is never used to check the model.
 - [ ] P12. Every row and value the rule reads is cited.
+- [ ] P13. Search near the concept for exceptions stated elsewhere, including
+      tables of what a construct does not cover.
+- [ ] P14. A guarantee over configuration data fails when the data is wrong.
+      CI mutates the data (drop each entry, flip each flag) and expects a
+      named theorem to fail. Pair every "some entry matches" hypothesis with
+      a theorem over a concrete input that must match.
+- [ ] P15. Each string in configuration data has its meaning cited and a cited
+      example over a real input (an absolute path, a full command), never the
+      string compared with itself.
+- [ ] P16. When a theorem quantifies over an abstract parameter such as a
+      matcher, the real system must be an instance of it. Cite the structure
+      assumed (per entry, same in every layer, monotone). What the parameter
+      cannot express, such as negation or anchoring by source, becomes a
+      reading or a question, not an `@[assumes]` note.
+- [ ] P17. Experiments run in the configuration the guarantee is claimed for
+      (the user's default mode and client), with a control per case.
+
+P1, P2, P5, P11, P12 and P14 have mechanical checks (see Stage 5). Ticking
+them means the checks ran and passed. Where a new pitfall can be checked
+mechanically, add the check to the status tool or CI as well as the item here.
 
 ## Templates
 
@@ -508,6 +769,9 @@ Copy into each pull request that adds or changes a rule.
   summary := "MQD thresholds: Silver 5,000, Gold 10,000, Platinum 15,000, Diamond 28,000." },
 { key := "modeller-cabin-order", kind := .modeller,
   summary := "Comfort Basic ranks above Main Classic. No source states an order." },
+{ key := "exp-lock-a", kind := .experiment,
+  doc := "experiments/2026-11-20-A", segment := "result.txt", sha256 := "…",
+  summary := "On 2.1.328, with the managed lock on, a local deny did not stop a managed allow. In the control without the lock, the deny applied." },
 ```
 
 ### CLAUDE.md for a new project
@@ -525,22 +789,44 @@ explains the design; read it before changing structure.
 - Changing a processor changes ids or hashes: rerun `process`, then `citations`,
   and update `Rules/Core/Sources.lean`.
 - Never edit generated Lean; change the generator and regenerate.
+- An experiment records the product version, the date, every input file, the
+  command and the observed output, and has a control run without the rule
+  under test. Run it in the configuration the guarantee is claimed for
+  (<the user's default mode and client>), on the machine and account named in
+  the README.
 
 ## Rules
-- Every rule cites its segments and has a cited example written first.
+- Every rule cites its segments and has a cited example written first, as a
+  named theorem tagged `@[cited_example "<key>"]`.
+- Before writing a rule, search the snapshot near the concept for "except",
+  "unless", "only when", "requires" and "does not", including tables of what a
+  construct does not cover.
 - Where sources disagree or are silent, take the point as a reading. Never pick
   one for the business. Disagreements are proven with `@[question]`; no `sorry`.
 - A choice no source makes is a `modeller` source, named on the rule.
 - Tag `@[checks]` only for a proof over every input that a wrong rule could fail.
+- Rules that depend on a product version take the version as a parameter, and
+  every version literal is cited.
+- Each string in configuration data has its meaning cited and a cited example
+  over a real input, never the string compared with itself.
+- A guarantee that rests on an abstract parameter, such as a rule matcher,
+  carries `@[assumes]`. What the parameter cannot express is a reading or a
+  question.
+- Every policy entry and flag has a mutation in `Policy/mutations.yaml` that
+  makes a named theorem fail.
 - State theorems over `Nat` and `Int`, not aliases.
 - After changing Lean: `lake build`, `lake exe status`, commit `docs/status.md`.
   If questions changed, regenerate the oracle and SME report and classify new
   questions as conflict or unstated.
-- Run the pitfalls checklist on every pull request.
+- Run the pitfalls checklist on every pull request. A pitfall that can be
+  checked mechanically goes into the status tool or CI.
 
 ## Writing
 Summaries of source text are in our words. Statuses are computed, never typed.
 ```
+
+Drop the experiment, configuration string, `@[assumes]` and mutation lines
+when the project has no product experiments or no Model B.
 
 ## Order of work for a new project
 
@@ -550,4 +836,8 @@ Summaries of source text are in our words. Statuses are computed, never typed.
 3. Write the area's rules, readings and golden cases. Run an independent
    critique and fix what it finds.
 4. Generate the SME report and send the questions.
-5. Repeat per area. Fold each new kind of mistake back into this checklist.
+5. Repeat per area. Fold each new kind of mistake back into this checklist,
+   and into the status tool or CI where a check can find it.
+6. For a policy over a product: Model A far enough to cover what the policy
+   relies on, with experiments in the user's default configuration, then
+   Model B with its generator, persona report and mutation step.
